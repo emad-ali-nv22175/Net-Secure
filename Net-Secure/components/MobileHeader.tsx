@@ -29,7 +29,6 @@ export const MobileHeader: React.FC<MobileHeaderProps> = ({ activeTab, handleMob
         {activeTab === "password-generator" && "Password Generator"}
         {activeTab === "password-analyzer" && "Password Analyzer"}
         {activeTab === "network-analyzer" && "Network Analyzer"}
-        {activeTab === "network-test" && "Network Test"}
       </div>
     </div>
     <TooltipProvider>

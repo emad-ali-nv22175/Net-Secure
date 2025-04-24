@@ -4,6 +4,8 @@ import { Zap, Activity, ArrowUp, ArrowDown } from "lucide-react"
 interface NetworkStatsProps {
   results: {
     [key: string]: string | number
+    jitter?: number
+    packetLoss?: number
   }
   progress: number
   openEstimator: () => void
@@ -45,11 +47,11 @@ export function NetworkStats({ results, progress, openEstimator }: NetworkStatsP
         </div>
       </div>
 
-      {/* Ping Card */}
+      {/* Ping & Connection Quality Card */}
       <div className="bg-card rounded-xl shadow-lg overflow-hidden border border-border">
         <div className="p-4">
           <div className="flex items-center justify-between mb-2">
-            <h3 className="text-sm font-semibold text-card-foreground">Ping</h3>
+            <h3 className="text-sm font-semibold text-card-foreground">Connection Quality</h3>
             <div className="p-1 bg-primary/20 rounded-lg">
               <Activity className="h-3.5 w-3.5 text-primary" />
             </div>
@@ -83,9 +85,19 @@ export function NetworkStats({ results, progress, openEstimator }: NetworkStatsP
                 <span className="text-[10px] text-muted-foreground">Latency</span>
               </div>
             </div>
-            <div className="flex items-center space-x-1.5">
-              <div className={`w-2 h-2 rounded-full ${pingQuality.color}`}></div>
-              <span className="text-xs text-muted-foreground">{pingQuality.text}</span>
+            <div className="space-y-2 w-full">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">Jitter</span>
+                <span className="text-xs font-medium">{results.jitter ? `${Math.round(results.jitter)} ms` : "—"}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">Packet Loss</span>
+                <span className="text-xs font-medium">{results.packetLoss ? `${results.packetLoss}%` : "—"}</span>
+              </div>
+              <div className="flex items-center space-x-1.5">
+                <div className={`w-2 h-2 rounded-full ${pingQuality.color}`}></div>
+                <span className="text-xs text-muted-foreground">{pingQuality.text}</span>
+              </div>
             </div>
           </div>
         </div>

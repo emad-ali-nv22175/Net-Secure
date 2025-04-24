@@ -289,34 +289,45 @@ export function FileEncryptionTool() {
     setRecentFiles((prev) => [newEntry, ...prev.slice(0, 4)])
   }
 
-  // Derive encryption key from password
+  // Enhanced error handling
+  const handleError = (error: unknown, operation: string) => {
+    const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+    setStatus('error');
+    setError(`${operation} failed: ${errorMessage}`);
+    console.error(`${operation} error:`, error);
+    setProgress(0);
+  };
+
+  // Secure key derivation with increased iterations
   const deriveKey = async (password: string, salt: Uint8Array): Promise<CryptoKey> => {
-    const encoder = new TextEncoder()
-    const passwordData = encoder.encode(password)
+    const encoder = new TextEncoder();
+    const passwordData = encoder.encode(password);
+    const passwordKey = await crypto.subtle.importKey(
+      "raw",
+      passwordData,
+      { name: "PBKDF2" },
+      false,
+      ["deriveKey"]
+    );
 
-    // Import the password as a key
-    const passwordKey = await crypto.subtle.importKey("raw", passwordData, { name: "PBKDF2" }, false, ["deriveKey"])
-
-    // Derive a key using PBKDF2
     return crypto.subtle.deriveKey(
       {
         name: "PBKDF2",
         salt,
-        iterations: 100000,
-        hash: "SHA-256",
+        iterations: 310000, // Increased from 100000 for better security
+        hash: "SHA-256"
       },
       passwordKey,
       { name: "AES-GCM", length: 256 },
       false,
-      ["encrypt", "decrypt"],
-    )
-  }
+      ["encrypt", "decrypt"]
+    );
+  };
 
-  // Encrypt file using Web Crypto API
   const encryptFile = async () => {
     if (!file || !password) {
-      setError("Please select a file and enter a password.")
-      return
+      setError("Please select a file and enter a password.");
+      return;
     }
 
     try {
@@ -324,68 +335,61 @@ export function FileEncryptionTool() {
       setProgress(0)
       setMessage("Preparing for encryption...")
 
-      // Read the file
-      const fileData = await file.arrayBuffer()
-      setProgress(20)
-      setMessage("Reading file...")
-
-      // Generate a random salt
-      const salt = crypto.getRandomValues(new Uint8Array(16))
-
-      // Generate a random IV
-      const iv = crypto.getRandomValues(new Uint8Array(12))
-
-      setProgress(40)
-      setMessage("Generating encryption key...")
-
-      // Derive the key from the password
-      const key = await deriveKey(password, salt)
-
-      setProgress(60)
-      setMessage("Encrypting file...")
-
-      // Encrypt the file data
+      // Add entropy to the encryption process
+      const additionalEntropy = new Uint8Array(32);
+      crypto.getRandomValues(additionalEntropy);
+      
+      const fileData = await file.arrayBuffer();
+      setProgress(20);
+      
+      const salt = crypto.getRandomValues(new Uint8Array(16));
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+      
+      setProgress(40);
+      const key = await deriveKey(password, salt);
+      
+      setProgress(60);
       const encryptedData = await crypto.subtle.encrypt(
         {
           name: "AES-GCM",
           iv,
+          additionalData: additionalEntropy // Add additional authenticated data
         },
         key,
-        fileData,
-      )
+        fileData
+      );
 
-      setProgress(80)
-      setMessage("Finalizing encryption...")
+      setProgress(80);
+      
+      // Format: additionalEntropy (32) + salt (16) + iv (12) + encrypted data
+      const encryptedArray = new Uint8Array(
+        additionalEntropy.length + salt.byteLength + iv.byteLength + encryptedData.byteLength
+      );
+      let offset = 0;
+      encryptedArray.set(additionalEntropy, offset);
+      offset += additionalEntropy.length;
+      encryptedArray.set(salt, offset);
+      offset += salt.byteLength;
+      encryptedArray.set(iv, offset);
+      offset += iv.byteLength;
+      encryptedArray.set(new Uint8Array(encryptedData), offset);
 
-      // Create the final encrypted file format
-      // Format: salt (16 bytes) + iv (12 bytes) + encrypted data
-      const encryptedArray = new Uint8Array(salt.byteLength + iv.byteLength + encryptedData.byteLength)
-      encryptedArray.set(salt, 0)
-      encryptedArray.set(iv, salt.byteLength)
-      encryptedArray.set(new Uint8Array(encryptedData), salt.byteLength + iv.byteLength)
+      const encryptedBlob = new Blob([encryptedArray], { type: "application/encrypted" });
+      setEncryptedFile(encryptedBlob);
+      addToHistory();
 
-      // Create a blob from the encrypted data
-      const encryptedBlob = new Blob([encryptedArray], { type: "application/encrypted" })
-      setEncryptedFile(encryptedBlob)
-
-      // Add to history
-      addToHistory()
-
-      setProgress(100)
-      setStatus("success")
-      setMessage("File encrypted successfully! You can now download the encrypted file.")
+      setProgress(100);
+      setStatus("success");
+      setMessage("File encrypted successfully! You can now download the encrypted file.");
     } catch (err) {
-      setStatus("error")
-      setError("Encryption failed. Please try again.")
-      console.error(err)
+      handleError(err, "Encryption");
     }
   }
 
-  // Decrypt file using Web Crypto API
   const decryptFile = async () => {
     if (!file || !password) {
-      setError("Please select a file and enter a password.")
-      return
+      setError("Please select a file and enter a password.");
+      return;
     }
 
     try {
@@ -393,17 +397,17 @@ export function FileEncryptionTool() {
       setProgress(0)
       setMessage("Preparing for decryption...")
 
-      // Read the encrypted file
       const encryptedData = await file.arrayBuffer()
       const encryptedArray = new Uint8Array(encryptedData)
 
       setProgress(20)
       setMessage("Reading encrypted file...")
 
-      // Extract the salt, IV, and encrypted data
-      const salt = encryptedArray.slice(0, 16)
-      const iv = encryptedArray.slice(16, 28)
-      const data = encryptedArray.slice(28)
+      // Extract components with new format
+      const additionalEntropy = encryptedArray.slice(0, 32);
+      const salt = encryptedArray.slice(32, 48);
+      const iv = encryptedArray.slice(48, 60);
+      const data = encryptedArray.slice(60);
 
       setProgress(40)
       setMessage("Verifying password...")
@@ -421,12 +425,13 @@ export function FileEncryptionTool() {
           {
             name: "AES-GCM",
             iv,
+            additionalData: additionalEntropy
           },
           key,
           data,
         )
-      } catch (e) {
-        throw new Error("Decryption failed. The password may be incorrect.")
+      } catch (decryptError) {
+        throw new Error("Decryption failed. The password may be incorrect or the file may be corrupted.");
       }
 
       setProgress(80)
@@ -489,9 +494,7 @@ export function FileEncryptionTool() {
       setStatus("success")
       setMessage("File decrypted successfully! You can now download the decrypted file.")
     } catch (err: any) {
-      setStatus("error")
-      setError(err.message || "Decryption failed. Please check your password and try again.")
-      console.error(err)
+      handleError(err, "Decryption");
     }
   }
 

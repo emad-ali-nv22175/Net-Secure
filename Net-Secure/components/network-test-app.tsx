@@ -17,6 +17,8 @@ export function NetworkTestApp() {
     upload?: number
     ping?: number
     timestamp?: string
+    jitter?: number
+    packetLoss?: number
   }>({})
   const [progress, setProgress] = useState(0)
 
@@ -26,22 +28,39 @@ export function NetworkTestApp() {
     setProgress(0)
 
     try {
-      // Start with ping test
+      // Ping test
       setProgress(10)
-      const startTime = Date.now()
-      const { startTime: serverTime } = await apiClient.ping()
-      const pingTime = Date.now() - startTime
+      const { pingTime } = await apiClient.ping()
       setTestResults(prev => ({ ...prev, ping: pingTime }))
       
-      // Run speed test
+      // Run multiple ping tests to calculate jitter
       setProgress(20)
-      const results = await apiClient.startSpeedTest()
-      setProgress(100)
+      const pingTimes: number[] = []
+      for (let i = 0; i < 5; i++) {
+        const { pingTime } = await apiClient.ping()
+        pingTimes.push(pingTime)
+        setProgress(20 + (i + 1) * 4)
+      }
       
+      // Calculate jitter (variation in ping times)
+      const jitter = Math.round(calculateJitter(pingTimes))
+      setTestResults(prev => ({ ...prev, jitter }))
+
+      // Run download and upload speed tests
+      setProgress(40)
+      const results = await apiClient.startSpeedTest()
+      setProgress(90)
+
+      // Calculate packet loss through multiple small requests
+      setProgress(95)
+      const packetLoss = await measurePacketLoss()
+      
+      setProgress(100)
       setTestResults(prev => ({
         ...prev,
         download: results.download,
         upload: results.upload,
+        packetLoss,
         timestamp: results.timestamp
       }))
     } catch (err) {
@@ -51,11 +70,54 @@ export function NetworkTestApp() {
     }
   }
 
+  const calculateJitter = (pingTimes: number[]) => {
+    const differences = pingTimes.slice(1).map((time, i) => Math.abs(time - pingTimes[i]))
+    return differences.reduce((sum, diff) => sum + diff, 0) / differences.length
+  }
+
+  const measurePacketLoss = async () => {
+    const totalPackets = 10
+    let successfulPackets = 0
+
+    for (let i = 0; i < totalPackets; i++) {
+      try {
+        await fetch('https://www.cloudflare.com/cdn-cgi/trace', { 
+          timeout: 1000 
+        })
+        successfulPackets++
+      } catch {} // Ignore failures
+    }
+
+    return Math.round((1 - successfulPackets / totalPackets) * 100)
+  }
+
   const testFileUpload = async (file: File) => {
     try {
       setIsLoading(true)
-      const result = await apiClient.uploadFile(file)
-      const speedMbps = (file.size * 8) / (result.uploadTime * 1000) // Convert to Mbps
+      setProgress(0)
+      
+      // Start with a quick latency test
+      setProgress(10)
+      const { pingTime } = await apiClient.ping()
+      setTestResults(prev => ({ ...prev, ping: pingTime }))
+
+      // Measure upload speed
+      setProgress(20)
+      const chunkSize = 1024 * 1024 // 1MB chunks
+      const totalSize = file.size
+      let uploadedSize = 0
+
+      while (uploadedSize < totalSize) {
+        const chunk = file.slice(uploadedSize, uploadedSize + chunkSize)
+        const result = await apiClient.uploadFile(new File([chunk], file.name))
+        uploadedSize += chunkSize
+        
+        const progress = Math.min(90, Math.round((uploadedSize / totalSize) * 100))
+        setProgress(progress)
+      }
+
+      setProgress(100)
+      const speedMbps = (totalSize * 8) / (Date.now() - Number(testResults.timestamp)) // Convert to Mbps
       setTestResults(prev => ({
         ...prev,
         upload: speedMbps,

@@ -13,8 +13,7 @@ import { SiteSecurityInspector } from "@/components/site-security-inspector";
 import { PasswordGenerator } from "@/components/password-generator";
 import { PasswordPatternAnalyzer } from "@/components/password-pattern-analyzer";
 import { NetworkAnalyzer } from "@/components/network-analyzer";
-import { NetworkTestTool } from "@/components/network-test-app";
-import { CodeObfuscationTool } from "@/components/code-obfuscation-tool";
+
 
 interface MainContentProps {
   activeTab: string;
@@ -121,11 +120,9 @@ export const MainContent: React.FC<MainContentProps> = ({ activeTab, setActiveTa
         </>
       );
     case "code-obfuscator":
-      return <CodeObfuscationTool />;
+      return <Obfuscator />;
     case "network-analyzer":
       return <NetworkAnalyzer />;
-    case "network-test":
-      return <NetworkTestTool />;
     case "encryption":
       return <FileEncryptionTool />;
     case "estimator":

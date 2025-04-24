@@ -1,256 +1,76 @@
 "use client"
 
-import { useState, useRef, useEffect, type ReactNode } from "react"
+import { useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import {
   Shield,
-  ExternalLink,
-  AlertCircle,
+  AlertTriangle,
   CheckCircle,
   XCircle,
+  RefreshCw,
+  ExternalLink,
   Lock,
   Globe,
-  Clock,
   Server,
-  Info,
-  FileDigit,
-  Eye,
-  Search,
-  ArrowRight,
-  Loader2,
-  RefreshCw,
-  Database,
-  Code,
-  FileCode,
   ShieldAlert,
   ShieldCheck,
-  AlertTriangle,
-  Check,
-  Copy,
-  Download,
+  AlertCircle,
 } from "lucide-react"
-import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Button } from "@/components/ui/button"
+import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
-import { Label } from "@/components/ui/label"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { AnimatedCard } from "@/components/ui/animated-card"
-import { toast } from "@/hooks/use-toast"
-import { cn } from "@/lib/utils"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 
-interface BadgeProps extends React.HTMLAttributes<HTMLDivElement> {
-  variant?: "default" | "secondary" | "destructive" | "outline"
-  className?: string
-  children?: ReactNode
+interface SecurityTest {
+  name: string
+  status: "pass" | "fail" | "warn" | "pending"
+  details: string
+  recommendation: string | undefined
+  severity: "low" | "medium" | "high"
 }
-
-// Security vulnerability types to check
-const VULNERABILITY_TYPES = {
-  XSS: {
-    name: "Cross-Site Scripting (XSS)",
-    description: "Attackers can inject malicious scripts that execute in users' browsers",
-    patterns: [
-      { pattern: /<script>.*<\/script>/i, severity: "high" },
-      { pattern: /javascript:/i, severity: "medium" },
-      { pattern: /on(load|click|mouseover|error)=/i, severity: "medium" },
-      { pattern: /eval\(/i, severity: "high" },
-      { pattern: /document\.cookie/i, severity: "medium" },
-    ],
-    recommendations: [
-      "Implement Content Security Policy (CSP) headers",
-      "Sanitize user input before rendering it in HTML",
-      "Use framework-provided escaping mechanisms",
-      "Implement XSS filters on both client and server sides",
-      "Set the HttpOnly flag on sensitive cookies",
-    ],
-  },
-  SQL_INJECTION: {
-    name: "SQL Injection",
-    description: "Attackers can inject malicious SQL code to manipulate your database",
-    patterns: [
-      { pattern: /(%27)|(')|(--)|(%23)|(#)/i, severity: "medium" },
-      { pattern: /((%3D)|(=))[^\n]*((%27)|(')|(--)|(%3B)|(;))/i, severity: "high" },
-      { pattern: /\w*((%27)|('))((%6F)|o|(%4F))((%72)|r|(%52))/i, severity: "high" },
-      { pattern: /(union).*(select)/i, severity: "high" },
-    ],
-    recommendations: [
-      "Use parameterized queries or prepared statements",
-      "Implement input validation and sanitization",
-      "Use ORM frameworks that handle SQL escaping",
-      "Apply the principle of least privilege for database accounts",
-      "Implement a web application firewall (WAF)",
-    ],
-  },
-  CSRF: {
-    name: "Cross-Site Request Forgery (CSRF)",
-    description: "Attackers can trick users into performing unwanted actions on authenticated sites",
-    patterns: [
-      { pattern: /csrf|xsrf/i, severity: "info" }, // This is just a basic check for CSRF tokens
-    ],
-    recommendations: [
-      "Implement anti-CSRF tokens in all forms",
-      "Use the SameSite cookie attribute",
-      "Verify the origin and referrer headers",
-      "Require re-authentication for sensitive actions",
-      "Implement proper CORS policies",
-    ],
-  },
-  OPEN_REDIRECT: {
-    name: "Open Redirect",
-    description: "Attackers can redirect users to malicious sites through your domain",
-    patterns: [{ pattern: /redirect=|url=|return=|next=|redir=|r=|target=/i, severity: "medium" }],
-    recommendations: [
-      "Validate all redirect URLs against a whitelist",
-      "Use relative URLs for internal redirects",
-      "Implement URL validation with proper parsing",
-      "Avoid using user-provided URLs for redirects",
-      "Add warnings for external redirects",
-    ],
-  },
-  INFORMATION_DISCLOSURE: {
-    name: "Information Disclosure",
-    description: "Sensitive information might be exposed through your site",
-    patterns: [
-      { pattern: /error|exception|stack trace|debug/i, severity: "medium" },
-      { pattern: /api[_-]?key|secret[_-]?key|password|credential/i, severity: "high" },
-    ],
-    recommendations: [
-      "Implement proper error handling",
-      "Avoid exposing sensitive information in error messages",
-      "Use custom error pages in production",
-      "Implement proper logging (avoid logging sensitive data)",
-      "Regularly audit your site for information leakage",
-    ],
-  },
-}
-
-// Security headers to check
-const SECURITY_HEADERS = [
-  {
-    name: "Content-Security-Policy",
-    description: "Helps prevent Cross-Site Scripting (XSS) and data injection attacks",
-    importance: "high",
-  },
-  {
-    name: "X-Content-Type-Options",
-    description: "Prevents MIME-sniffing attacks by forcing browsers to use the declared content-type",
-    importance: "medium",
-  },
-  {
-    name: "X-Frame-Options",
-    description: "Protects against clickjacking attacks by preventing your site from being embedded in frames",
-    importance: "high",
-  },
-  {
-    name: "Strict-Transport-Security",
-    description: "Forces browsers to use HTTPS for future visits to your site",
-    importance: "high",
-  },
-  {
-    name: "X-XSS-Protection",
-    description: "Enables browser's built-in XSS filtering capabilities",
-    importance: "medium",
-  },
-  {
-    name: "Referrer-Policy",
-    description: "Controls how much referrer information is included with requests",
-    importance: "medium",
-  },
-  {
-    name: "Permissions-Policy",
-    description: "Controls which browser features and APIs can be used on your site",
-    importance: "medium",
-  },
-  {
-    name: "X-Permitted-Cross-Domain-Policies",
-    description: "Controls how data can be loaded from your domain by certain Adobe products",
-    importance: "low",
-  },
-  {
-    name: "Cross-Origin-Embedder-Policy",
-    description: "Controls which resources can be loaded cross-origin",
-    importance: "medium",
-  },
-  {
-    name: "Cross-Origin-Opener-Policy",
-    description: "Controls how your site interacts with cross-origin windows",
-    importance: "medium",
-  },
-  {
-    name: "Cross-Origin-Resource-Policy",
-    description: "Controls which websites can embed your resources",
-    importance: "medium",
-  },
-]
 
 export function SiteSecurityInspector() {
   const [url, setUrl] = useState("")
-  const [results, setResults] = useState<any | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [scanProgress, setScanProgress] = useState(0)
+  const [isScanning, setIsScanning] = useState(false)
+  const [progress, setProgress] = useState(0)
   const [currentTest, setCurrentTest] = useState("")
-  const [showSuccessAnimation, setShowSuccessAnimation] = useState(false)
-  const [activeTab, setActiveTab] = useState("overview")
-  const [copySuccess, setCopySuccess] = useState(false)
-  const scanButtonRef = useRef<HTMLButtonElement>(null)
+  const [tests, setTests] = useState<SecurityTest[]>([])
+  const [error, setError] = useState<string | null>(null)
 
-  const isValidUrl = (url: string) => {
-    try {
-      new URL(url)
-      return true
-    } catch {
-      return false
-    }
-  }
-
-  useEffect(() => {
-    if (scanProgress === 100 && loading) {
-      setTimeout(() => {
-        setLoading(false)
-        setShowSuccessAnimation(true)
-        setTimeout(() => setShowSuccessAnimation(false), 1500)
-      }, 500)
-    }
-  }, [scanProgress, loading])
-
-  // Move updateProgress inside component
-  const updateProgress = (progress: number, testName: string) => {
+  const updateProgress = (value: number, testName: string) => {
+    setProgress(value)
     setCurrentTest(testName)
-    setScanProgress(progress)
   }
 
-  // Perform real security scans instead of simulations
-  const scanSite = async (url: string) => {
-    try {
-      setLoading(true)
-      setError(null)
-      setScanProgress(0)
-      setResults(null)
+  const runSecurityTests = async () => {
+    if (!url) {
+      setError("Please enter a URL to scan")
+      return
+    }
 
-      const scanResults: any = {
-        url,
-        timestamp: new Date().toISOString(),
-        score: 0,
-        tests: [],
-        vulnerabilities: [],
-        securityHeaders: [],
-      }
+    try {
+      setIsScanning(true)
+      setError(null)
+      setTests([])
+      setProgress(0)
+
+      // Normalize URL
+      const parsedUrl = new URL(url.startsWith("http") ? url : `https://${url}`)
+      const normalizedUrl = parsedUrl.toString()
+      
+      // Initialize test results
+      const securityTests: SecurityTest[] = []
 
       // Test 1: HTTPS Check
-      updateProgress(5, "Checking HTTPS...")
-      const isHttps = url.startsWith("https://")
-      scanResults.tests.push({
-        id: "https",
-        name: "HTTPS",
-        category: "Transport Security",
-        result: isHttps ? "pass" : "fail",
+      updateProgress(5, "Checking HTTPS")
+      const isHttps = parsedUrl.protocol === "https:"
+      securityTests.push({
+        name: "HTTPS Security",
+        status: isHttps ? "pass" : "fail",
+        severity: "high",
         details: isHttps ? "Connection uses secure HTTPS protocol" : "Connection uses insecure HTTP protocol",
-        recommendation: isHttps ? null : "Implement HTTPS across your entire site to protect data in transit",
+        recommendation: isHttps ? undefined : "Implement HTTPS across your entire site to protect data in transit",
       })
 
       // Test 2: Basic connection test with real fetch
@@ -262,7 +82,7 @@ export function SiteSecurityInspector() {
         const controller = new AbortController()
         const timeoutId = setTimeout(() => controller.abort(), 10000)
 
-        const response = await fetch(`/api/proxy?url=${encodeURIComponent(url)}`, {
+        const response = await fetch(`/api/proxy?url=${encodeURIComponent(normalizedUrl)}`, {
           method: "HEAD",
           signal: controller.signal,
         })
@@ -280,1372 +100,270 @@ export function SiteSecurityInspector() {
         console.error("Connection test error:", err)
       }
 
-      scanResults.tests.push({
-        id: "connection",
-        name: "Connection Test",
-        category: "Availability",
-        result: connectionSuccess ? "pass" : "warning",
-        details: connectionSuccess
-          ? "Successfully connected to the URL"
-          : "Could not establish a connection to test the URL",
-        recommendation: connectionSuccess ? null : "Check if the server is online and accessible",
-      })
-
-      // Test 3: DNS lookup using real DNS resolution
-      updateProgress(20, "Performing DNS lookup...")
-      try {
-        const dnsTestResponse = await fetch(`/api/dns-lookup?hostname=${encodeURIComponent(new URL(url).hostname)}`)
-        const dnsData = await dnsTestResponse.json()
-        
-        scanResults.tests.push({
-          id: "dns",
-          name: "DNS Resolution",
-          category: "Availability",
-          result: dnsData.resolved ? "pass" : "warning",
-          details: dnsData.resolved 
-            ? `Hostname ${new URL(url).hostname} resolves successfully` 
-            : `Could not resolve hostname ${new URL(url).hostname}`,
-          recommendation: dnsData.resolved ? null : "Ensure your domain's DNS records are properly configured",
-        })
-      } catch (err) {
-        scanResults.tests.push({
-          id: "dns",
-          name: "DNS Resolution",
-          category: "Availability",
-          result: "warning",
-          details: `Could not verify DNS resolution for ${new URL(url).hostname}`,
-          recommendation: "Ensure your domain's DNS records are properly configured",
-        })
+      // Test 3: Security Headers Check
+      updateProgress(30, "Checking security headers")
+      
+      const securityHeaders = {
+        "strict-transport-security": {
+          name: "HTTP Strict Transport Security (HSTS)",
+          severity: "high",
+        },
+        "content-security-policy": {
+          name: "Content Security Policy (CSP)",
+          severity: "high",
+        },
+        "x-frame-options": {
+          name: "X-Frame-Options",
+          severity: "medium",
+        },
+        "x-content-type-options": {
+          name: "X-Content-Type-Options",
+          severity: "medium",
+        },
+        "referrer-policy": {
+          name: "Referrer Policy",
+          severity: "medium",
+        },
+        "permissions-policy": {
+          name: "Permissions Policy",
+          severity: "medium",
+        },
       }
 
-      // Test 4: Check security headers
-      updateProgress(30, "Checking security headers...")
-      const securityHeaders = SECURITY_HEADERS.map((header) => ({
-        ...header,
-        present: headers[header.name.toLowerCase()] !== undefined,
-        value: headers[header.name.toLowerCase()],
-      }))
-
-      scanResults.securityHeaders = securityHeaders
-      const presentHeaders = securityHeaders.filter((h) => h.present).length
-      const headerScore = Math.round((presentHeaders / securityHeaders.length) * 100)
-
-      scanResults.tests.push({
-        id: "security-headers",
-        name: "Security Headers",
-        category: "HTTP Security",
-        result: headerScore >= 70 ? "pass" : headerScore >= 40 ? "warning" : "fail",
-        details: `${presentHeaders} out of ${securityHeaders.length} recommended security headers detected`,
-        recommendation:
-          headerScore < 100 ? "Implement missing security headers to improve your site's security posture" : null,
+      Object.entries(securityHeaders).forEach(([header, info]) => {
+        const hasHeader = headers[header]
+        securityTests.push({
+          name: info.name,
+          status: hasHeader ? "pass" : "fail",
+          severity: info.severity as "low" | "medium" | "high",
+          details: hasHeader 
+            ? `${info.name} is properly configured`
+            : `${info.name} is missing`,
+          recommendation: hasHeader 
+            ? undefined 
+            : `Implement ${info.name} header to enhance security`,
+        })
       })
 
-      // Test 5: SSL Certificate check
-      updateProgress(45, "Checking SSL certificate...")
-      if (isHttps) {
-        try {
-          const sslCheckResponse = await fetch(`/api/ssl-check?host=${encodeURIComponent(new URL(url).hostname)}`)
-          const sslData = await sslCheckResponse.json()
-          
-          scanResults.tests.push({
-            id: "ssl",
-            name: "SSL Certificate",
-            category: "Transport Security",
-            result: sslData.valid ? "pass" : "fail",
-            details: sslData.valid 
-              ? "SSL certificate is valid and working correctly" 
-              : `SSL certificate validation failed: ${sslData.error}`,
-            recommendation: sslData.valid ? null : "Renew or properly configure your SSL certificate",
-          })
-        } catch (err) {
-          scanResults.tests.push({
-            id: "ssl",
-            name: "SSL Certificate",
-            category: "Transport Security",
-            result: "warning",
-            details: "Could not verify SSL certificate validity",
-            recommendation: "Ensure your SSL certificate is properly installed and not expired",
-          })
+      // Test 4: SSL/TLS Version Check
+      updateProgress(50, "Checking SSL/TLS configuration")
+      const sslTest: SecurityTest = {
+        name: "SSL/TLS Version",
+        status: "pending",
+        severity: "high",
+        details: "",
+        recommendation: undefined,
+      }
+
+      try {
+        const sslResponse = await fetch(`/api/ssl-check?url=${encodeURIComponent(normalizedUrl)}`)
+        const sslData = await sslResponse.json()
+        
+        if (sslData.minimumTLS === "1.2" || sslData.minimumTLS === "1.3") {
+          sslTest.status = "pass"
+          sslTest.details = `Site uses modern TLS ${sslData.minimumTLS}`
+          sslTest.recommendation = undefined
+        } else {
+          sslTest.status = "fail"
+          sslTest.details = "Site uses outdated SSL/TLS version"
+          sslTest.recommendation = "Upgrade to TLS 1.2 or 1.3"
         }
-      }
-
-      // Test 6: Cookie security check
-      updateProgress(60, "Analyzing cookies...")
-      try {
-        const cookieResponse = await fetch(`/api/check-cookies?url=${encodeURIComponent(url)}`)
-        const cookieData = await cookieResponse.json()
-        
-        scanResults.tests.push({
-          id: "cookies",
-          name: "Cookie Security",
-          category: "Data Security",
-          result: cookieData.secure ? "pass" : cookieData.cookies ? "warning" : "info",
-          details: cookieData.message,
-          recommendation: cookieData.recommendation,
-        })
       } catch (err) {
-        scanResults.tests.push({
-          id: "cookies",
-          name: "Cookie Security",
-          category: "Data Security",
-          result: "info",
-          details: "Could not analyze cookies",
-          recommendation: "Ensure cookies containing sensitive information have the Secure and HttpOnly flags",
-        })
+        sslTest.status = "warn"
+        sslTest.details = "Could not determine SSL/TLS version"
+        sslTest.recommendation = undefined
       }
 
-      // Test 7: Content Security Policy check
-      updateProgress(75, "Checking Content Security Policy...")
-      const csp = headers["content-security-policy"]
-      scanResults.tests.push({
-        id: "csp",
-        name: "Content Security Policy",
-        category: "Security Headers",
-        result: csp ? "pass" : "warning",
-        details: csp 
-          ? "Content Security Policy is implemented" 
-          : "No Content Security Policy detected",
-        recommendation: csp ? null : "Implement a Content Security Policy to prevent XSS and other injection attacks",
+      securityTests.push(sslTest)
+
+      // Test 5: Mixed Content Check
+      updateProgress(70, "Checking for mixed content")
+      securityTests.push({
+        name: "Mixed Content",
+        status: isHttps && !headers["content-security-policy"]?.includes("upgrade-insecure-requests")
+          ? "warn"
+          : "pass",
+        severity: "medium",
+        details: "Checking for mixed content vulnerabilities",
+        recommendation: "Implement upgrade-insecure-requests in CSP",
       })
 
-      // Test 8: Port scanning
-      updateProgress(85, "Scanning ports...")
+      // Test 6: Common Vulnerabilities Check
+      updateProgress(90, "Checking for known vulnerabilities")
       try {
-        const portScanResponse = await fetch(`/api/port-scan?host=${encodeURIComponent(new URL(url).hostname)}`)
-        const portData = await portScanResponse.json()
+        const vulnResponse = await fetch(`/api/vulnerability-check?url=${encodeURIComponent(normalizedUrl)}`)
+        const vulnData = await vulnResponse.json()
         
-        scanResults.tests.push({
-          id: "ports",
-          name: "Open Ports",
-          category: "Network Security",
-          result: portData.risk === "low" ? "pass" : portData.risk === "medium" ? "warning" : "fail",
-          details: portData.details,
-          recommendation: portData.recommendation,
+        securityTests.push({
+          name: "Known Vulnerabilities",
+          status: vulnData.vulnerabilities.length > 0 ? "fail" : "pass",
+          severity: "high",
+          details: vulnData.vulnerabilities.length > 0
+            ? `Found ${vulnData.vulnerabilities.length} potential vulnerabilities`
+            : "No known vulnerabilities detected",
+          recommendation: vulnData.vulnerabilities.length > 0
+            ? "Review and patch identified vulnerabilities"
+            : undefined,
         })
       } catch (err) {
-        scanResults.tests.push({
-          id: "ports",
-          name: "Open Ports",
-          category: "Network Security",
-          result: "warning",
-          details: "Could not complete port scan",
-          recommendation: "Ensure only necessary ports are open and properly secured",
-        })
-      }
-
-      // Test 9: Vulnerability scanning
-      updateProgress(95, "Scanning for vulnerabilities...")
-      try {
-        const vulnScanResponse = await fetch(`/api/vulnerability-scan?url=${encodeURIComponent(url)}`)
-        const vulnData = await vulnScanResponse.json()
-        
-        scanResults.vulnerabilities = vulnData.vulnerabilities
-        scanResults.tests.push({
-          id: "vulnerabilities",
-          name: "Vulnerability Scan",
-          category: "Security Assessment",
-          result: vulnData.risk === "low" ? "pass" : vulnData.risk === "medium" ? "warning" : "fail",
-          details: vulnData.details,
-          recommendation: vulnData.recommendation,
-        })
-      } catch (err) {
-        scanResults.tests.push({
-          id: "vulnerabilities",
-          name: "Vulnerability Scan",
-          category: "Security Assessment",
-          result: "warning",
+        securityTests.push({
+          name: "Known Vulnerabilities",
+          status: "warn",
+          severity: "high",
           details: "Could not complete vulnerability scan",
-          recommendation: "Regular vulnerability scanning is recommended",
+          recommendation: "Manual security audit recommended",
         })
       }
 
-      updateProgress(100, "Finalizing results...")
-
-      // Calculate overall score based on test results
-      const score = Math.round(
-        (scanResults.tests.filter((t: any) => t.result === "pass").length * 100) / scanResults.tests.length +
-        (scanResults.securityHeaders.filter((h: any) => h.present).length * 10) / 2 -
-        (scanResults.tests.filter((t: any) => t.result === "fail").length * 15) -
-        (scanResults.tests.filter((t: any) => t.result === "warning").length * 5) -
-        (scanResults.vulnerabilities.length * 10) // Deduct points for vulnerabilities
-      )
-
-      scanResults.score = Math.max(0, Math.min(100, score)) // Ensure score is between 0-100
-      setResults(scanResults)
-    } catch (error) {
-      setError(error instanceof Error ? error.message : "Scan failed")
+      setTests(securityTests)
+      setProgress(100)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to complete security scan")
     } finally {
-      setLoading(false)
-      setCurrentTest("")
+      setIsScanning(false)
     }
   }
 
-  const copyResults = () => {
-    if (!results) return
-
-    try {
-      // Format the results in a readable way
-      const formattedResults = formatResultsForCopy(results)
-
-      // Copy to clipboard
-      navigator.clipboard.writeText(formattedResults).then(() => {
-        setCopySuccess(true)
-        setTimeout(() => setCopySuccess(false), 2000)
-        toast({
-          title: "Results copied to clipboard",
-          description: "The scan results have been copied to your clipboard",
-        })
-      })
-    } catch (err) {
-      console.error("Failed to copy results:", err)
-      toast({
-        title: "Copy failed",
-        description: "Could not copy results to clipboard",
-        variant: "destructive",
-      })
-    }
-  }
-
-  const formatResultsForCopy = (results: any) => {
-    const lines = [
-      `SECURITY SCAN RESULTS FOR: ${results.url}`,
-      `Scan Time: ${new Date(results.timestamp).toLocaleString()}`,
-      `Security Score: ${results.score}/100`,
-      ``,
-      `SUMMARY:`,
-      `- Pass: ${results.summary.pass}`,
-      `- Warning: ${results.summary.warning}`,
-      `- Fail: ${results.summary.fail}`,
-      `- Info: ${results.summary.info}`,
-      `- Vulnerabilities: ${results.summary.vulnerabilities}`,
-      ``,
-      `TESTS:`,
-    ]
-
-    // Add test results
-    results.tests.forEach((test: any) => {
-      lines.push(`[${test.result.toUpperCase()}] ${test.name} (${test.category})`)
-      lines.push(`  Details: ${test.details}`)
-      if (test.recommendation) {
-        lines.push(`  Recommendation: ${test.recommendation}`)
-      }
-      lines.push(``)
-    })
-
-    // Add vulnerabilities
-    if (results.vulnerabilities.length > 0) {
-      lines.push(`VULNERABILITIES:`)
-      results.vulnerabilities.forEach((vuln: any) => {
-        const vulnType = VULNERABILITY_TYPES[vuln.type as keyof typeof VULNERABILITY_TYPES]
-        lines.push(`[${vuln.severity.toUpperCase()}] ${vulnType?.name || vuln.type}`)
-        lines.push(`  Details: ${vuln.details}`)
-        lines.push(`  Recommendation: ${vuln.recommendation}`)
-        if (vuln.evidence) {
-          lines.push(`  Evidence: ${vuln.evidence}`)
-        }
-        lines.push(``)
-      })
-    }
-
-    // Add security headers
-    lines.push(`SECURITY HEADERS:`)
-    results.securityHeaders.forEach((header: any) => {
-      lines.push(`${header.present ? "[✓]" : "[✗]"} ${header.name}`)
-      if (header.present && header.value) {
-        lines.push(`  Value: ${header.value}`)
-      }
-    })
-
-    return lines.join("\n")
-  }
-
-  const downloadResults = () => {
-    if (!results) return
-
-    try {
-      // Format the results in a readable way
-      const formattedResults = formatResultsForCopy(results)
-
-      // Create a blob and download link
-      const blob = new Blob([formattedResults], { type: "text/plain" })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement("a")
-      a.href = url
-      a.download = `security-scan-${new URL(results.url).hostname}-${new Date().toISOString().slice(0, 10)}.txt`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
-
-      toast({
-        title: "Results downloaded",
-        description: "The scan results have been downloaded as a text file",
-      })
-    } catch (err) {
-      console.error("Failed to download results:", err)
-      toast({
-        title: "Download failed",
-        description: "Could not download results",
-        variant: "destructive",
-      })
-    }
-  }
-
-  const getResultBadge = (result: string) => {
-    if (result === "pass") {
-      return (
-        <motion.div
-          initial={{ scale: 0.8, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ type: "spring", stiffness: 500, damping: 30 }}
-        >
-          <Badge className="bg-green-500">Pass</Badge>
-        </motion.div>
-      )
-    } else if (result === "warning") {
-      return (
-        <motion.div
-          initial={{ scale: 0.8, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ type: "spring", stiffness: 500, damping: 30 }}
-        >
-          <Badge variant="outline" className="text-orange-500 border-orange-500">
-            Warning
-          </Badge>
-        </motion.div>
-      )
-    } else if (result === "info") {
-      return (
-        <motion.div
-          initial={{ scale: 0.8, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ type: "spring", stiffness: 500, damping: 30 }}
-        >
-          <Badge variant="outline" className="text-blue-500 border-blue-500">
-            Info
-          </Badge>
-        </motion.div>
-      )
-    } else {
-      return (
-        <motion.div
-          initial={{ scale: 0.8, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ type: "spring", stiffness: 500, damping: 30 }}
-        >
-          <Badge variant="destructive">Fail</Badge>
-        </motion.div>
-      )
-    }
-  }
-
-  const getSeverityBadge = (severity: string) => {
-    if (severity === "low") {
-      return <Badge className="bg-blue-500">Low</Badge>
-    } else if (severity === "medium") {
-      return <Badge className="bg-orange-500">Medium</Badge>
-    } else {
-      return <Badge variant="destructive">High</Badge>
-    }
-  }
-
-  const getScoreColor = (score: number) => {
-    if (score >= 80) return "text-green-500"
-    if (score >= 60) return "text-yellow-500"
-    return "text-red-500"
-  }
-
-  const getResultIcon = (result: string) => {
-    if (result === "pass") {
-      return (
-        <motion.div
-          initial={{ scale: 0, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ type: "spring", stiffness: 500, damping: 30 }}
-        >
-          <CheckCircle className="h-5 w-5 text-green-500" />
-        </motion.div>
-      )
-    } else if (result === "warning") {
-      return (
-        <motion.div
-          initial={{ scale: 0, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ type: "spring", stiffness: 500, damping: 30 }}
-        >
-          <AlertCircle className="h-5 w-5 text-orange-500" />
-        </motion.div>
-      )
-    } else if (result === "info") {
-      return (
-        <motion.div
-          initial={{ scale: 0, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ type: "spring", stiffness: 500, damping: 30 }}
-        >
-          <Info className="h-5 w-5 text-blue-500" />
-        </motion.div>
-      )
-    } else {
-      return (
-        <motion.div
-          initial={{ scale: 0, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ type: "spring", stiffness: 500, damping: 30 }}
-        >
-          <XCircle className="h-5 w-5 text-red-500" />
-        </motion.div>
-      )
-    }
-  }
-
-  const getVulnerabilityIcon = (type: string) => {
-    switch (type) {
-      case "XSS":
-        return <Code className="h-5 w-5 text-red-500" />
-      case "SQL_INJECTION":
-        return <Database className="h-5 w-5 text-red-500" />
-      case "CSRF":
-        return <FileCode className="h-5 w-5 text-orange-500" />
-      case "OPEN_REDIRECT":
-        return <ExternalLink className="h-5 w-5 text-orange-500" />
-      case "INFORMATION_DISCLOSURE":
-        return <Eye className="h-5 w-5 text-orange-500" />
+  const getSeverityColor = (severity: SecurityTest["severity"]) => {
+    switch (severity) {
+      case "high":
+        return "text-red-500"
+      case "medium":
+        return "text-yellow-500"
+      case "low":
+        return "text-blue-500"
       default:
-        return <AlertTriangle className="h-5 w-5 text-red-500" />
+        return "text-gray-500"
     }
   }
 
-  const getCategoryIcon = (category: string) => {
-    switch (category) {
-      case "Transport Security":
-        return <Lock className="h-5 w-5" />
-      case "HTTP Security":
-        return <Shield className="h-5 w-5" />
-      case "Availability":
-        return <Server className="h-5 w-5" />
-      case "Data Security":
-        return <FileDigit className="h-5 w-5" />
-      case "Information Disclosure":
-        return <Eye className="h-5 w-5" />
+  const getStatusIcon = (status: SecurityTest["status"]) => {
+    switch (status) {
+      case "pass":
+        return <CheckCircle className="h-5 w-5 text-green-500" />
+      case "fail":
+        return <XCircle className="h-5 w-5 text-red-500" />
+      case "warn":
+        return <AlertTriangle className="h-5 w-5 text-yellow-500" />
       default:
-        return <Globe className="h-5 w-5" />
+        return <RefreshCw className="h-5 w-5 animate-spin" />
     }
   }
 
   return (
-    <div className="animate-fade-in">
-      <motion.div
-        className="tool-explanation"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-      >
-        <h3 className="flex items-center gap-2">
-          <Shield className="h-5 w-5" />
-          What is the Site Security Inspector?
-        </h3>
-        <p>
-          This tool analyzes a website's security configuration by checking for common vulnerabilities, proper HTTPS
-          implementation, security headers, and more. It helps you understand potential security risks and provides
-          recommendations to improve your website's security posture.
+    <div className="space-y-6">
+      <div className="space-y-1">
+        <h2 className="text-lg font-semibold">Site Security Inspector</h2>
+        <p className="text-sm text-muted-foreground">
+          Analyze website security and identify potential vulnerabilities
         </p>
-      </motion.div>
+      </div>
 
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, delay: 0.1 }}
-      >
-        <AnimatedCard hoverEffect="glow" title={""}>
-          <CardHeader className="bg-gradient-to-r from-primary/10 to-transparent">
-            <CardTitle className="flex items-center gap-2 text-xl">
-              <motion.div initial={{ rotate: -10 }} animate={{ rotate: 0 }} transition={{ duration: 0.5, delay: 0.2 }}>
-                <Shield className="h-6 w-6 text-primary" />
-              </motion.div>
-              <span>Site Security Inspector</span>
-            </CardTitle>
-            <CardDescription>
-              Comprehensive security analysis for websites with real-time vulnerability detection
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="pt-6">
-            <div className="space-y-6">
-              <div className="space-y-2">
-                <Label htmlFor="url-to-scan" className="text-base font-medium">
-                  Enter Website URL to Scan
-                </Label>
-                <div className="flex space-x-2">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      id="url-to-scan"
-                      type="url"
-                      placeholder="https://example.com"
-                      value={url}
-                      onChange={(e) => setUrl(e.target.value)}
-                      className="pl-9 border-2 focus-visible:ring-primary/30 transition-all duration-300"
-                    />
+      <div className="flex gap-3">
+        <Input
+          type="text"
+          placeholder="Enter website URL (e.g., example.com)"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          className="flex-1"
+        />
+        <Button
+          onClick={runSecurityTests}
+          disabled={isScanning}
+          className="flex items-center gap-2"
+        >
+          {isScanning ? (
+            <>
+              <RefreshCw className="h-4 w-4 animate-spin" />
+              Scanning...
+            </>
+          ) : (
+            <>
+              <Shield className="h-4 w-4" />
+              Scan Site
+            </>
+          )}
+        </Button>
+      </div>
+
+      {error && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      {isScanning && (
+        <div className="space-y-2">
+          <div className="flex justify-between text-sm">
+            <span>{currentTest}</span>
+            <span>{progress}%</span>
+          </div>
+          <Progress value={progress} />
+        </div>
+      )}
+
+      <AnimatePresence>
+        {tests.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="space-y-4"
+          >
+            {tests.map((test, index) => (
+              <motion.div
+                key={test.name}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.1 }}
+                className="p-4 bg-card rounded-lg border space-y-2"
+              >
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-2">
+                    {getStatusIcon(test.status)}
+                    <div>
+                      <h3 className="font-medium">{test.name}</h3>
+                      <p className="text-sm text-muted-foreground">
+                        {test.details}
+                      </p>
+                    </div>
                   </div>
-                  <Button
-                    ref={scanButtonRef}
-                    onClick={() => scanSite(url)}
-                    disabled={loading || !url}
-                    className="relative overflow-hidden group"
+                  <Badge
+                    variant={test.status === "pass" ? "default" : "outline"}
+                    className={getSeverityColor(test.severity)}
                   >
-                    <AnimatePresence mode="wait">
-                      {loading ? (
-                        <motion.div
-                          key="loading"
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          exit={{ opacity: 0 }}
-                          className="flex items-center gap-2"
-                        >
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                          <span>Scanning...</span>
-                        </motion.div>
-                      ) : showSuccessAnimation ? (
-                        <motion.div
-                          key="success"
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          exit={{ opacity: 0 }}
-                          className="flex items-center gap-2 text-green-500"
-                        >
-                          <CheckCircle className="h-4 w-4" />
-                          <span>Complete!</span>
-                        </motion.div>
-                      ) : (
-                        <motion.div
-                          key="scan"
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          exit={{ opacity: 0 }}
-                          className="flex items-center gap-2"
-                        >
-                          <span>Scan Website</span>
-                          <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-
-                    {/* Button background animation */}
-                    <motion.div
-                      className="absolute inset-0 bg-primary/10 rounded-md"
-                      initial={{ scale: 0, opacity: 0 }}
-                      animate={loading ? { scale: 1, opacity: 1 } : { scale: 0, opacity: 0 }}
-                      transition={{ duration: 0.3 }}
-                    />
-                  </Button>
+                    {test.severity}
+                  </Badge>
                 </div>
-                {url && !isValidUrl(url) && (
-                  <motion.p
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: "auto" }}
-                    exit={{ opacity: 0, height: 0 }}
-                    className="text-xs text-red-500"
-                  >
-                    Please enter a valid URL (including http:// or https://)
-                  </motion.p>
+                {test.recommendation && (
+                  <div className="pl-7">
+                    <p className="text-sm font-medium text-primary">
+                      Recommendation:
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      {test.recommendation}
+                    </p>
+                  </div>
                 )}
-                <p className="text-xs text-muted-foreground">
-                  This scanner performs real security checks using browser APIs. No data is sent to external servers.
-                </p>
+              </motion.div>
+            ))}
+
+            <div className="p-4 bg-primary/5 rounded-lg border border-primary/20">
+              <div className="flex items-start gap-3">
+                <ShieldCheck className="h-5 w-5 text-primary mt-0.5" />
+                <div>
+                  <h3 className="font-medium mb-1">Security Score</h3>
+                  <p className="text-sm text-muted-foreground">
+                    {tests.filter((t) => t.status === "pass").length} out of{" "}
+                    {tests.length} checks passed
+                  </p>
+                </div>
               </div>
-
-              <AnimatePresence mode="wait">
-                {loading && (
-                  <motion.div
-                    className="space-y-3"
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -20 }}
-                    transition={{ duration: 0.3 }}
-                  >
-                    <div className="flex justify-between items-center">
-                      <motion.span
-                        className="text-sm"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        key={currentTest}
-                      >
-                        {currentTest}
-                      </motion.span>
-                      <span className="text-sm font-medium">{scanProgress}%</span>
-                    </div>
-                    <div className="h-2 relative rounded-full overflow-hidden bg-secondary">
-                      <motion.div
-                        className="absolute inset-0 bg-primary"
-                        initial={{ width: 0 }}
-                        animate={{ width: `${scanProgress}%` }}
-                        transition={{ duration: 0.3 }}
-                      />
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              <AnimatePresence mode="wait">
-                {error && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -20 }}
-                    transition={{ duration: 0.3 }}
-                  >
-                    <Alert variant="destructive">
-                      <AlertCircle className="h-4 w-4" />
-                      <AlertTitle>Error</AlertTitle>
-                      <AlertDescription>{error}</AlertDescription>
-                    </Alert>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              <AnimatePresence mode="wait">
-                {results && (
-                  <motion.div
-                    className="space-y-6"
-                    initial={{ opacity: 0, y: 40 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{
-                      duration: 0.5,
-                      staggerChildren: 0.1,
-                    }}
-                  >
-                    <motion.div
-                      className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 p-4 bg-secondary/30 rounded-lg border"
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.3, delay: 0.1 }}
-                    >
-                      <div>
-                        <h3 className="text-lg font-medium">Scan Results</h3>
-                        <p className="text-sm text-muted-foreground">{new Date(results.timestamp).toLocaleString()}</p>
-                        <div className="flex items-center gap-2 mt-1">
-                          <ExternalLink className="h-4 w-4 text-muted-foreground" />
-                          <span className="text-sm font-medium break-all">{results.url}</span>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-6">
-                        <motion.div
-                          className="text-center"
-                          initial={{ scale: 0.5, opacity: 0 }}
-                          animate={{ scale: 1, opacity: 1 }}
-                          transition={{
-                            type: "spring",
-                            stiffness: 300,
-                            damping: 20,
-                            delay: 0.3,
-                          }}
-                        >
-                          <div className="security-score-container relative">
-                            <svg width="60" height="60" viewBox="0 0 120 120">
-                              <circle
-                                cx="60"
-                                cy="60"
-                                r="54"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="12"
-                                className="text-muted-foreground/20"
-                              />
-                              <motion.circle
-                                cx="60"
-                                cy="60"
-                                r="54"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="12"
-                                strokeDasharray="339.292"
-                                strokeDashoffset="339.292"
-                                className={getScoreColor(results.score)}
-                                style={{
-                                  transformOrigin: "center",
-                                  rotate: "-90deg",
-                                }}
-                                initial={{ strokeDashoffset: 339.292 }}
-                                animate={{
-                                  strokeDashoffset: 339.292 * (1 - results.score / 100),
-                                }}
-                                transition={{
-                                  duration: 1.5,
-                                  ease: "easeOut",
-                                  delay: 0.5,
-                                }}
-                              />
-                            </svg>
-                            <div className="absolute inset-0 flex items-center justify-center">
-                              <motion.span
-                                className={`text-xl font-bold ${getScoreColor(results.score)}`}
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: 1 }}
-                                transition={{ delay: 1 }}
-                              >
-                                {results.score}
-                              </motion.span>
-                            </div>
-                          </div>
-                          <p className="text-sm text-muted-foreground mt-1">Security Score</p>
-                        </motion.div>
-                        <div className="grid grid-cols-2 gap-2 text-center">
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <motion.div
-                                  className="px-2"
-                                  initial={{ opacity: 0, y: 10 }}
-                                  animate={{ opacity: 1, y: 0 }}
-                                  transition={{ delay: 0.4 }}
-                                >
-                                  <motion.div
-                                    className="text-lg font-medium text-green-500"
-                                    initial={{ opacity: 0 }}
-                                    animate={{ opacity: 1 }}
-                                    transition={{ delay: 0.5 }}
-                                  >
-                                    {results.summary.pass}
-                                  </motion.div>
-                                  <p className="text-xs text-muted-foreground">Pass</p>
-                                </motion.div>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>Tests that passed security checks</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <motion.div
-                                  className="px-2"
-                                  initial={{ opacity: 0, y: 10 }}
-                                  animate={{ opacity: 1, y: 0 }}
-                                  transition={{ delay: 0.5 }}
-                                >
-                                  <motion.div
-                                    className="text-lg font-medium text-orange-500"
-                                    initial={{ opacity: 0 }}
-                                    animate={{ opacity: 1 }}
-                                    transition={{ delay: 0.6 }}
-                                  >
-                                    {results.summary.warning}
-                                  </motion.div>
-                                  <p className="text-xs text-muted-foreground">Warning</p>
-                                </motion.div>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>Tests with potential security concerns</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <motion.div
-                                  className="px-2"
-                                  initial={{ opacity: 0, y: 10 }}
-                                  animate={{ opacity: 1, y: 0 }}
-                                  transition={{ delay: 0.6 }}
-                                >
-                                  <motion.div
-                                    className="text-lg font-medium text-red-500"
-                                    initial={{ opacity: 0 }}
-                                    animate={{ opacity: 1 }}
-                                    transition={{ delay: 0.7 }}
-                                  >
-                                    {results.summary.fail}
-                                  </motion.div>
-                                  <p className="text-xs text-muted-foreground">Fail</p>
-                                </motion.div>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>Tests that failed security checks</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <motion.div
-                                  className="px-2"
-                                  initial={{ opacity: 0, y: 10 }}
-                                  animate={{ opacity: 1, y: 0 }}
-                                  transition={{ delay: 0.7 }}
-                                >
-                                  <motion.div
-                                    className="text-lg font-medium text-red-500"
-                                    initial={{ opacity: 0 }}
-                                    animate={{ opacity: 1 }}
-                                    transition={{ delay: 0.8 }}
-                                  >
-                                    {results.summary.vulnerabilities}
-                                  </motion.div>
-                                  <p className="text-xs text-muted-foreground">Vulnerabilities</p>
-                                </motion.div>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>Potential security vulnerabilities detected</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        </div>
-                      </div>
-                    </motion.div>
-
-                    {/* Action buttons for results */}
-                    <motion.div
-                      className="flex flex-wrap gap-2 justify-end"
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: 0.3 }}
-                    >
-                      <Button variant="outline" size="sm" className="flex items-center gap-2" onClick={copyResults}>
-                        {copySuccess ? (
-                          <>
-                            <CheckCircle className="h-4 w-4 text-green-500" />
-                            <span>Copied!</span>
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="h-4 w-4" />
-                            <span>Copy Results</span>
-                          </>
-                        )}
-                      </Button>
-                      <Button variant="outline" size="sm" className="flex items-center gap-2" onClick={downloadResults}>
-                        <Download className="h-4 w-4" />
-                        <span>Download Report</span>
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="flex items-center gap-2"
-                        onClick={() => {
-                          setUrl("")
-                          setResults(null)
-                        }}
-                      >
-                        <RefreshCw className="h-4 w-4" />
-                        <span>New Scan</span>
-                      </Button>
-                    </motion.div>
-
-                    <Tabs defaultValue="overview" value={activeTab} onValueChange={setActiveTab} className="w-full">
-                      <TabsList className="grid w-full grid-cols-4">
-                        <TabsTrigger value="overview">Overview</TabsTrigger>
-                        <TabsTrigger value="vulnerabilities">Vulnerabilities</TabsTrigger>
-                        <TabsTrigger value="headers">Security Headers</TabsTrigger>
-                        <TabsTrigger value="details">All Tests</TabsTrigger>
-                      </TabsList>
-
-                      <TabsContent value="overview" className="space-y-4 mt-4">
-                        <AnimatedCard delay={0.2} hoverEffect="lift" title={""}>
-                          <CardHeader className="pb-2">
-                            <CardTitle className="text-base flex items-center gap-2">
-                              <ShieldAlert className="h-4 w-4" />
-                              Security Summary
-                            </CardTitle>
-                          </CardHeader>
-                          <CardContent>
-                            <div className="space-y-4">
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div className="space-y-2">
-                                  <h4 className="text-sm font-medium">Critical Issues</h4>
-                                  {results.vulnerabilities.filter((v: any) => v.severity === "high").length > 0 ||
-                                  results.tests.filter((t: any) => t.result === "fail").length > 0 ? (
-                                    <div className="space-y-2">
-                                      {results.vulnerabilities
-                                        .filter((v: any) => v.severity === "high")
-                                        .map((vuln: any, i: number) => (
-                                          <motion.div
-                                            key={`vuln-${i}`}
-                                            initial={{ opacity: 0, x: -10 }}
-                                            animate={{ opacity: 1, x: 0 }}
-                                            transition={{ delay: 0.3 + i * 0.1 }}
-                                            className="flex items-start gap-2 text-sm"
-                                          >
-                                            <AlertCircle className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />
-                                            <span>
-                                              {VULNERABILITY_TYPES[vuln.type as keyof typeof VULNERABILITY_TYPES]
-                                                ?.name || vuln.type}
-                                            </span>
-                                          </motion.div>
-                                        ))}
-                                      {results.tests
-                                        .filter((t: any) => t.result === "fail")
-                                        .map((test: any, i: number) => (
-                                          <motion.div
-                                            key={`test-${i}`}
-                                            initial={{ opacity: 0, x: -10 }}
-                                            animate={{ opacity: 1, x: 0 }}
-                                            transition={{ delay: 0.3 + i * 0.1 }}
-                                            className="flex items-start gap-2 text-sm"
-                                          >
-                                            <XCircle className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />
-                                            <span>{test.name}</span>
-                                          </motion.div>
-                                        ))}
-                                    </div>
-                                  ) : (
-                                    <div className="text-sm text-green-500 flex items-center gap-2">
-                                      <CheckCircle className="h-4 w-4" />
-                                      <span>No critical issues found</span>
-                                    </div>
-                                  )}
-                                </div>
-
-                                <div className="space-y-2">
-                                  <h4 className="text-sm font-medium">Warnings</h4>
-                                  {results.vulnerabilities.filter((v: any) => v.severity === "medium").length > 0 ||
-                                  results.tests.filter((t: any) => t.result === "warning").length > 0 ? (
-                                    <div className="space-y-2">
-                                      {results.vulnerabilities
-                                        .filter((v: any) => v.severity === "medium")
-                                        .map((vuln: any, i: number) => (
-                                          <motion.div
-                                            key={`vuln-${i}`}
-                                            initial={{ opacity: 0, x: -10 }}
-                                            animate={{ opacity: 1, x: 0 }}
-                                            transition={{ delay: 0.3 + i * 0.1 }}
-                                            className="flex items-start gap-2 text-sm"
-                                          >
-                                            <AlertTriangle className="h-4 w-4 text-orange-500 mt-0.5 shrink-0" />
-                                            <span>
-                                              {VULNERABILITY_TYPES[vuln.type as keyof typeof VULNERABILITY_TYPES]
-                                                ?.name || vuln.type}
-                                            </span>
-                                          </motion.div>
-                                        ))}
-                                      {results.tests
-                                        .filter((t: any) => t.result === "warning")
-                                        .map((test: any, i: number) => (
-                                          <motion.div
-                                            key={`test-${i}`}
-                                            initial={{ opacity: 0, x: -10 }}
-                                            animate={{ opacity: 1, x: 0 }}
-                                            transition={{ delay: 0.3 + i * 0.1 }}
-                                            className="flex items-start gap-2 text-sm"
-                                          >
-                                            <AlertCircle className="h-4 w-4 text-orange-500 mt-0.5 shrink-0" />
-                                            <span>{test.name}</span>
-                                          </motion.div>
-                                        ))}
-                                    </div>
-                                  ) : (
-                                    <div className="text-sm text-green-500 flex items-center gap-2">
-                                      <CheckCircle className="h-4 w-4" />
-                                      <span>No warnings found</span>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-
-                              <div className="border-t pt-4 mt-2">
-                                <h4 className="text-sm font-medium mb-2">Key Recommendations</h4>
-                                <div className="space-y-2">
-                                  {results.tests
-                                    .filter((t: any) => t.recommendation)
-                                    .slice(0, 3)
-                                    .map((test: any, i: number) => (
-                                      <motion.div
-                                        key={i}
-                                        initial={{ opacity: 0, x: -10 }}
-                                        animate={{ opacity: 1, x: 0 }}
-                                        transition={{ delay: 0.5 + i * 0.1 }}
-                                        className="flex items-start gap-2 text-sm"
-                                      >
-                                        <Check className="h-4 w-4 text-green-500 mt-0.5 shrink-0" />
-                                        <span>{test.recommendation}</span>
-                                      </motion.div>
-                                    ))}
-                                  {results.vulnerabilities.length > 0 && (
-                                    <motion.div
-                                      initial={{ opacity: 0, x: -10 }}
-                                      animate={{ opacity: 1, x: 0 }}
-                                      transition={{ delay: 0.8 }}
-                                      className="flex items-start gap-2 text-sm"
-                                    >
-                                      <Check className="h-4 w-4 text-green-500 mt-0.5 shrink-0" />
-                                      <span>Address the detected vulnerabilities to improve security</span>
-                                    </motion.div>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          </CardContent>
-                        </AnimatedCard>
-
-                        <AnimatedCard delay={0.4} hoverEffect="lift" title={""}>
-                          <CardHeader className="pb-2">
-                            <CardTitle className="text-base flex items-center gap-2">
-                              <ShieldCheck className="h-4 w-4" />
-                              Security Score Breakdown
-                            </CardTitle>
-                          </CardHeader>
-                          <CardContent>
-                            <div className="space-y-4">
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div className="space-y-2">
-                                  <h4 className="text-sm font-medium">Transport Security</h4>
-                                  <div className="space-y-1">
-                                    {results.tests
-                                      .filter((t: any) => t.category === "Transport Security")
-                                      .map((test: any, i: number) => (
-                                        <motion.div
-                                          key={i}
-                                          initial={{ opacity: 0, x: -10 }}
-                                          animate={{ opacity: 1, x: 0 }}
-                                          transition={{ delay: 0.3 + i * 0.1 }}
-                                          className="flex items-center justify-between text-sm"
-                                        >
-                                          <div className="flex items-center gap-2">
-                                            {getResultIcon(test.result)}
-                                            <span>{test.name}</span>
-                                          </div>
-                                          {getResultBadge(test.result)}
-                                        </motion.div>
-                                      ))}
-                                  </div>
-                                </div>
-
-                                <div className="space-y-2">
-                                  <h4 className="text-sm font-medium">HTTP Security</h4>
-                                  <div className="space-y-1">
-                                    {results.tests
-                                      .filter((t: any) => t.category === "HTTP Security")
-                                      .map((test: any, i: number) => (
-                                        <motion.div
-                                          key={i}
-                                          initial={{ opacity: 0, x: -10 }}
-                                          animate={{ opacity: 1, x: 0 }}
-                                          transition={{ delay: 0.3 + i * 0.1 }}
-                                          className="flex items-center justify-between text-sm"
-                                        >
-                                          <div className="flex items-center gap-2">
-                                            {getResultIcon(test.result)}
-                                            <span>{test.name}</span>
-                                          </div>
-                                          {getResultBadge(test.result)}
-                                        </motion.div>
-                                      ))}
-                                  </div>
-                                </div>
-                              </div>
-
-                              <div className="border-t pt-4 mt-2">
-                                <h4 className="text-sm font-medium mb-2">Vulnerability Summary</h4>
-                                <div className="space-y-2">
-                                  {results.vulnerabilities.length > 0 ? (
-                                    results.vulnerabilities.map((vuln: any, i: number) => (
-                                      <motion.div
-                                        key={i}
-                                        initial={{ opacity: 0, x: -10 }}
-                                        animate={{ opacity: 1, x: 0 }}
-                                        transition={{ delay: 0.5 + i * 0.1 }}
-                                        className="flex items-center justify-between text-sm"
-                                      >
-                                        <div className="flex items-center gap-2">
-                                          {getVulnerabilityIcon(vuln.type)}
-                                          <span>
-                                            {VULNERABILITY_TYPES[vuln.type as keyof typeof VULNERABILITY_TYPES]?.name ||
-                                              vuln.type}
-                                          </span>
-                                        </div>
-                                        {getSeverityBadge(vuln.severity)}
-                                      </motion.div>
-                                    ))
-                                  ) : (
-                                    <div className="text-sm text-green-500 flex items-center gap-2">
-                                      <CheckCircle className="h-4 w-4" />
-                                      <span>No vulnerabilities detected</span>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          </CardContent>
-                        </AnimatedCard>
-
-                        <Alert>
-                          <AlertTitle className="flex items-center gap-2">
-                            <Clock className="h-4 w-4" />
-                            Next Steps
-                          </AlertTitle>
-                          <AlertDescription>
-                            <ul className="list-disc pl-5 mt-2 space-y-1 text-sm">
-                              {results.score < 100 && (
-                                <li>Address the warnings and failures identified in this report</li>
-                              )}
-                              <li>Perform regular security scans to maintain a strong security posture</li>
-                              <li>Consider a comprehensive penetration test for critical applications</li>
-                              <li>Implement a security monitoring solution for ongoing protection</li>
-                            </ul>
-                          </AlertDescription>
-                        </Alert>
-                      </TabsContent>
-
-                      <TabsContent value="vulnerabilities" className="space-y-4 mt-4">
-                        <AnimatedCard delay={0.2} hoverEffect="lift" title={""}>
-                          <CardHeader className="pb-2">
-                            <CardTitle className="text-base flex items-center gap-2">
-                              <AlertTriangle className="h-4 w-4" />
-                              Vulnerability Scan Results
-                            </CardTitle>
-                            <CardDescription>Detected security vulnerabilities and recommended fixes</CardDescription>
-                          </CardHeader>
-                          <CardContent>
-                            {results.vulnerabilities.length > 0 ? (
-                              <Accordion type="single" collapsible className="w-full">
-                                {results.vulnerabilities.map((vuln: any, i: number) => {
-                                  const vulnType = VULNERABILITY_TYPES[vuln.type as keyof typeof VULNERABILITY_TYPES]
-                                  return (
-                                    <AccordionItem value={`vuln-${i}`} key={i} className="border rounded-lg px-1 mb-2">
-                                      <AccordionTrigger className="hover:no-underline px-3 py-2 hover:bg-secondary/50 rounded-lg">
-                                        <div className="flex items-center justify-between w-full">
-                                          <div className="flex items-center gap-2">
-                                            {getVulnerabilityIcon(vuln.type)}
-                                            <span className="font-medium">{vulnType?.name || vuln.type}</span>
-                                          </div>
-                                          {getSeverityBadge(vuln.severity)}
-                                        </div>
-                                      </AccordionTrigger>
-                                      <AccordionContent>
-                                        <div className="space-y-3 pt-2 px-2">
-                                          <div className="text-sm text-muted-foreground">
-                                            {vulnType?.description || vuln.details}
-                                          </div>
-
-                                          <div className="border rounded-md p-3 bg-secondary/20">
-                                            <div className="text-xs font-medium mb-1">Details</div>
-                                            <div className="text-sm">{vuln.details}</div>
-                                          </div>
-
-                                          {vuln.evidence && (
-                                            <div className="border rounded-md p-3 bg-secondary/20">
-                                              <div className="text-xs font-medium mb-1">Evidence</div>
-                                              <div className="font-mono text-xs overflow-x-auto">
-                                                {vuln.evidence}
-                                              </div>
-                                            </div>
-                                          )}
-
-                                          <div className="space-y-2 mt-3">
-                                            <div className="text-sm font-medium">Recommendations</div>
-                                            <ul className="space-y-1">
-                                              {vulnType?.recommendations.map((rec, j) => (
-                                                <li key={j} className="text-sm flex items-start gap-2">
-                                                  <Check className="h-4 w-4 text-green-500 mt-0.5 shrink-0" />
-                                                  <span>{rec}</span>
-                                                </li>
-                                              ))}
-                                            </ul>
-                                          </div>
-                                        </div>
-                                      </AccordionContent>
-                                    </AccordionItem>
-                                  )
-                                })}
-                              </Accordion>
-                            ) : (
-                              <motion.div
-                                initial={{ opacity: 0, y: 10 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{ delay: 0.3 }}
-                                className="flex flex-col items-center justify-center py-8 text-center"
-                              >
-                                <ShieldCheck className="h-12 w-12 text-green-500 mb-4" />
-                                <h3 className="text-lg font-medium">No Vulnerabilities Detected</h3>
-                                <p className="text-sm text-muted-foreground max-w-md mt-2">
-                                  No common vulnerabilities were detected in the initial scan. However, a comprehensive
-                                  penetration test is recommended for critical applications.
-                                </p>
-                              </motion.div>
-                            )}
-                          </CardContent>
-                        </AnimatedCard>
-
-                        <AnimatedCard delay={0.4} hoverEffect="lift" title={""}>
-                          <CardHeader className="pb-2">
-                            <CardTitle className="text-base flex items-center gap-2">
-                              <Shield className="h-4 w-4" />
-                              Common Web Vulnerabilities
-                            </CardTitle>
-                            <CardDescription>Information about common web security vulnerabilities</CardDescription>
-                          </CardHeader>
-                          <CardContent>
-                            <Accordion type="single" collapsible className="w-full">
-                              {Object.entries(VULNERABILITY_TYPES).map(([key, value], i) => (
-                                <AccordionItem value={key} key={key} className="border rounded-lg px-1 mb-2">
-                                  <AccordionTrigger className="hover:no-underline px-3 py-2 hover:bg-secondary/50 rounded-lg">
-                                    <div className="flex items-center gap-2">
-                                      {getVulnerabilityIcon(key)}
-                                      <span className="font-medium">{value.name}</span>
-                                    </div>
-                                  </AccordionTrigger>
-                                  <AccordionContent>
-                                    <div className="space-y-3 pt-2 px-2">
-                                      <div className="text-sm">{value.description}</div>
-
-                                      <div className="space-y-2 mt-3">
-                                        <div className="text-sm font-medium">Prevention Techniques</div>
-                                        <ul className="space-y-1">
-                                          {value.recommendations.map((rec, j) => (
-                                            <li key={j} className="text-sm flex items-start gap-2">
-                                              <Check className="h-4 w-4 text-green-500 mt-0.5 shrink-0" />
-                                              <span>{rec}</span>
-                                            </li>
-                                          ))}
-                                        </ul>
-                                      </div>
-                                    </div>
-                                  </AccordionContent>
-                                </AccordionItem>
-                              ))}
-                            </Accordion>
-                          </CardContent>
-                        </AnimatedCard>
-                      </TabsContent>
-
-                      <TabsContent value="headers" className="space-y-4 mt-4">
-                        <AnimatedCard delay={0.2} hoverEffect="lift" title={""}>
-                          <CardHeader className="pb-2">
-                            <CardTitle className="text-base flex items-center gap-2">
-                              <Shield className="h-4 w-4" />
-                              Security Headers
-                            </CardTitle>
-                            <CardDescription>
-                              HTTP security headers help protect your site from various attacks
-                            </CardDescription>
-                          </CardHeader>
-                          <CardContent>
-                            <div className="space-y-4">
-                              <div className="grid grid-cols-1 gap-2">
-                                {results.securityHeaders.map((header: any, index: number) => (
-                                  <motion.div
-                                    key={index}
-                                    initial={{ opacity: 0, y: 10 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    transition={{ delay: 0.2 + index * 0.05 }}
-                                    className="flex items-start gap-2 text-sm border-b last:border-0 pb-3 last:pb-0 pt-2 first:pt-0"
-                                  >
-                                    {header.present ? (
-                                      <CheckCircle className="h-4 w-4 text-green-500 flex-shrink-0 mt-0.5" />
-                                    ) : (
-                                      <XCircle className="h-4 w-4 text-red-500 flex-shrink-0 mt-0.5" />
-                                    )}
-                                    <div className="flex-1">
-                                      <div className="font-medium">{header.name}</div>
-                                      <div className="text-xs text-muted-foreground">{header.description}</div>
-                                      {header.present && header.value && (
-                                        <div className="mt-1 text-xs font-mono bg-secondary/30 p-1 rounded overflow-x-auto">
-                                          {header.value}
-                                        </div>
-                                      )}
-                                    </div>
-                                    <Badge
-                                      variant={
-                                        header.importance === "high"
-                                          ? "default"
-                                          : header.importance === "medium"
-                                            ? "outline"
-                                            : "secondary"
-                                      }
-                                      className={
-                                        header.importance === "high"
-                                          ? "bg-red-500"
-                                          : header.importance === "medium"
-                                            ? "border-orange-500 text-orange-500"
-                                            : ""
-                                      }
-                                    >
-                                      {header.importance}
-                                    </Badge>
-                                  </motion.div>
-                                ))}
-                              </div>
-
-                              <Alert className="mt-4">
-                                <AlertTitle className="flex items-center gap-2">
-                                  <Info className="h-4 w-4" />
-                                  About Security Headers
-                                </AlertTitle>
-                                <AlertDescription>
-                                  <p className="text-sm mt-2">
-                                    Security headers are HTTP response headers that help browsers enhance the security
-                                    of your website. They provide an additional layer of security by preventing common
-                                    web vulnerabilities like XSS, clickjacking, and other code injection attacks.
-                                  </p>
-                                  <div className="mt-2 text-sm">
-                                    <strong>Implementation:</strong> Security headers are typically configured at the
-                                    web server level (Apache, Nginx) or in your application code.
-                                  </div>
-                                </AlertDescription>
-                              </Alert>
-                            </div>
-                          </CardContent>
-                        </AnimatedCard>
-                      </TabsContent>
-
-                      <TabsContent value="details" className="space-y-4 mt-4">
-                        <AnimatedCard delay={0.2} hoverEffect="lift" title={""}>
-                          <CardHeader className="pb-2">
-                            <CardTitle className="text-base flex items-center gap-2">
-                              <FileDigit className="h-4 w-4" />
-                              Detailed Test Results
-                            </CardTitle>
-                            <CardDescription>Complete results of all security tests performed</CardDescription>
-                          </CardHeader>
-                          <CardContent>
-                            <Accordion type="single" collapsible className="w-full">
-                              {Object.entries(results.categories).map(([category, tests]: [string, any], i) => (
-                                <AccordionItem value={category} key={category} className="border rounded-lg px-1 mb-2">
-                                  <AccordionTrigger className="hover:no-underline px-3 py-2 hover:bg-secondary/50 rounded-lg">
-                                    <div className="flex items-center gap-2">
-                                      {getCategoryIcon(category)}
-                                      <span className="font-medium">{category}</span>
-                                    </div>
-                                  </AccordionTrigger>
-                                  <AccordionContent>
-                                    <div className="space-y-3 pt-2">
-                                      {tests.map((test: any, j: number) => (
-                                        <div key={j} className="border-b last:border-0 pb-3 last:pb-0">
-                                          <div className="flex items-center justify-between">
-                                            <div className="flex items-center gap-2">
-                                              {getResultIcon(test.result)}
-                                              <span className="font-medium">{test.name}</span>
-                                            </div>
-                                            {getResultBadge(test.result)}
-                                          </div>
-                                          <div className="mt-2 text-sm text-muted-foreground pl-7">{test.details}</div>
-                                          {test.recommendation && (
-                                            <div className="mt-2 text-sm pl-7 flex items-start gap-2">
-                                              <Check className="h-4 w-4 text-green-500 mt-0.5 shrink-0" />
-                                              <span>{test.recommendation}</span>
-                                            </div>
-                                          )}
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </AccordionContent>
-                                </AccordionItem>
-                              ))}
-                            </Accordion>
-                          </CardContent>
-                        </AnimatedCard>
-                      </TabsContent>
-                    </Tabs>
-                  </motion.div>
-                )}
-              </AnimatePresence>
             </div>
-          </CardContent>
-        </AnimatedCard>
-      </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

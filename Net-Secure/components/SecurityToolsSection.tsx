@@ -45,32 +45,6 @@ export const SecurityToolsSection: React.FC<SecurityToolsSectionProps> = ({ setA
           </CardFooter>
         </Card>
       </motion.div>
-      {/* Network Test Tool Card */}
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
-        <Card className="tool-card overflow-hidden border-primary/20 hover:border-primary/50 transition-all duration-300 hover:shadow-md hover:shadow-primary/5 group">
-          <CardHeader className="p-5 bg-gradient-to-br from-primary/5 to-primary/10">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center group-hover:scale-110 transition-transform">
-                <Scan className="h-5 w-5 text-primary" />
-              </div>
-              <div>
-                <CardTitle className="text-base">Network Test</CardTitle>
-                <CardDescription>Advanced network testing and diagnostics</CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          <CardFooter className="p-5 pt-0">
-            <Button
-              variant="outline"
-              className="w-full justify-between text-sm bg-secondary/70 hover:bg-secondary group-hover:border-primary/30"
-              onClick={() => setActiveTab("network-test")}
-            >
-              Open Tool
-              <ArrowRight className="h-4 w-4 ml-1 group-hover:translate-x-1 transition-transform" />
-            </Button>
-          </CardFooter>
-        </Card>
-      </motion.div>
       {/* Site Security Inspector Card */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.6 }}>
         <Card className="tool-card overflow-hidden border-primary/20 hover:border-primary/50 transition-all duration-300 hover:shadow-md hover:shadow-primary/5 group">

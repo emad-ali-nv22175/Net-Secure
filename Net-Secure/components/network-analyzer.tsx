@@ -13,12 +13,16 @@ export function NetworkAnalyzer() {
   const [host, setHost] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [currentOperation, setCurrentOperation] = useState<string>("")
+  const [scanProgress, setScanProgress] = useState(0)
   const [scanResults, setScanResults] = useState<{
-    ports?: { openPorts: string[]; services: Array<{ port: string; service: string }> }
+    ports?: { 
+      openPorts: string[]
+      services: Array<{ port: string; service: string; version?: string }> 
+    }
     ssl?: {
       grade: string
       protocol: string
-      certificate: string
       issues: string[]
       certDetails: {
         subject: string
@@ -33,39 +37,67 @@ export function NetworkAnalyzer() {
       firewallDetected: boolean
       filtered: string[]
       rules: string[]
+      recommendations?: string[]
     }
-    vulnerabilities?: { vuln: string }
+    vulnerabilities?: {
+      critical: number
+      high: number
+      medium: number
+      low: number
+      findings: Array<{
+        severity: string
+        title: string
+        description: string
+        solution?: string
+      }>
+    }
   }>({})
 
   const runNetworkAnalysis = async () => {
     setIsLoading(true)
     setError(null)
+    setScanProgress(0)
     
     try {
       // If no host provided, get current IP
       if (!host) {
+        setCurrentOperation("Detecting IP address...")
         const { ip } = await apiClient.getIpAddress()
         setHost(ip)
       }
 
-      // Run all scans in parallel
-      const [ports, ssl, firewall, vulnScan] = await Promise.all([
-        apiClient.scanPorts(host),
-        host ? apiClient.checkSSL(host) : Promise.resolve(null),
-        apiClient.checkFirewall(host),
-        apiClient.scanVulnerabilities()
-      ])
+      // Run port scan
+      setCurrentOperation("Scanning ports...")
+      setScanProgress(20)
+      const ports = await apiClient.scanPorts(host)
 
+      // SSL/TLS analysis
+      setCurrentOperation("Analyzing SSL/TLS configuration...")
+      setScanProgress(40)
+      const ssl = host ? await apiClient.checkSSL(host) : null
+
+      // Firewall detection
+      setCurrentOperation("Detecting firewall...")
+      setScanProgress(60)
+      const firewall = await apiClient.checkFirewall(host)
+
+      // Vulnerability scan
+      setCurrentOperation("Scanning for vulnerabilities...")
+      setScanProgress(80)
+      const vulnScan = await apiClient.scanVulnerabilities(host)
+
+      setScanProgress(100)
       setScanResults({
-        ports,
-        ssl: ssl || undefined,
-        firewall,
-        vulnerabilities: vulnScan
+        ports: ports?.data?.ports,
+        ssl: ssl?.data?.ssl,
+        firewall: firewall?.data?.firewall,
+        vulnerabilities: vulnScan?.data?.vulnerabilities
       })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Network analysis failed')
     } finally {
       setIsLoading(false)
+      setCurrentOperation("")
     }
   }
 
@@ -99,7 +131,8 @@ export function NetworkAnalyzer() {
       {isLoading && (
         <div className="space-y-2">
           <div className="text-sm text-muted-foreground">Analysis in progress...</div>
-          <Progress value={45} className="w-full" />
+          <Progress value={scanProgress} className="w-full" />
+          <div className="text-sm text-muted-foreground">{currentOperation}</div>
         </div>
       )}
 
@@ -244,9 +277,60 @@ export function NetworkAnalyzer() {
         >
           {scanResults.vulnerabilities ? (
             <div className="space-y-3">
-              <pre className="text-xs whitespace-pre-wrap bg-secondary/50 p-3 rounded">
-                {scanResults.vulnerabilities.vuln}
-              </pre>
+              <div className="grid grid-cols-4 gap-2">
+                {/* Summary boxes for each severity level */}
+                <div className="bg-red-500/10 p-2 rounded">
+                  <div className="text-lg font-bold text-red-500">{scanResults.vulnerabilities.critical}</div>
+                  <div className="text-xs text-muted-foreground">Critical</div>
+                </div>
+                <div className="bg-orange-500/10 p-2 rounded">
+                  <div className="text-lg font-bold text-orange-500">{scanResults.vulnerabilities.high}</div>
+                  <div className="text-xs text-muted-foreground">High</div>
+                </div>
+                <div className="bg-yellow-500/10 p-2 rounded">
+                  <div className="text-lg font-bold text-yellow-500">{scanResults.vulnerabilities.medium}</div>
+                  <div className="text-xs text-muted-foreground">Medium</div>
+                </div>
+                <div className="bg-blue-500/10 p-2 rounded">
+                  <div className="text-lg font-bold text-blue-500">{scanResults.vulnerabilities.low}</div>
+                  <div className="text-xs text-muted-foreground">Low</div>
+                </div>
+              </div>
+
+              {scanResults.vulnerabilities.findings.length > 0 ? (
+                <div className="space-y-3">
+                  <h4 className="font-medium">Detailed Findings</h4>
+                  {scanResults.vulnerabilities.findings.map((finding, index) => (
+                    <div key={index} className={`p-3 rounded border ${
+                      finding.severity === 'critical' ? 'border-red-500/20 bg-red-500/5' :
+                      finding.severity === 'high' ? 'border-orange-500/20 bg-orange-500/5' :
+                      finding.severity === 'medium' ? 'border-yellow-500/20 bg-yellow-500/5' :
+                      'border-blue-500/20 bg-blue-500/5'
+                    }`}>
+                      <div className="flex items-center justify-between mb-1">
+                        <h5 className="font-medium">{finding.title}</h5>
+                        <span className={`text-xs font-medium px-2 py-1 rounded ${
+                          finding.severity === 'critical' ? 'bg-red-500/20 text-red-500' :
+                          finding.severity === 'high' ? 'bg-orange-500/20 text-orange-500' :
+                          finding.severity === 'medium' ? 'bg-yellow-500/20 text-yellow-500' :
+                          'bg-blue-500/20 text-blue-500'
+                        }`}>
+                          {finding.severity.toUpperCase()}
+                        </span>
+                      </div>
+                      <p className="text-sm text-muted-foreground mb-2">{finding.description}</p>
+                      {finding.solution && (
+                        <div className="text-sm">
+                          <span className="font-medium">Recommendation: </span>
+                          {finding.solution}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-sm text-green-500 font-medium">No vulnerabilities found</div>
+              )}
             </div>
           ) : (
             <div className="text-sm text-muted-foreground">No vulnerability scan results yet</div>
