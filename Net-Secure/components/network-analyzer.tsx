@@ -16,42 +16,41 @@ export function NetworkAnalyzer() {
   const [currentOperation, setCurrentOperation] = useState<string>("")
   const [scanProgress, setScanProgress] = useState(0)
   const [scanResults, setScanResults] = useState<{
-    ports?: { 
-      openPorts: string[]
-      services: Array<{ port: string; service: string; version?: string }> 
-    }
+    ports?: {
+      openPorts: string[];
+      services: Array<{ port: string; service: string; version?: string }>;
+    };
     ssl?: {
-      grade: string
-      protocol: string
-      issues: string[]
+      grade: string;
+      protocol: string;
+      issues: string[];
       certDetails: {
-        subject: string
-        issuer: string
-        validFrom: string
-        validTo: string
-        keySize: string
-        signatureAlgorithm: string
-      }
-    }
+        subject: string;
+        issuer: string;
+        validFrom: string;
+        validTo: string;
+        keySize: string;
+        signatureAlgorithm: string;
+      };
+    };
     firewall?: {
-      firewallDetected: boolean
-      filtered: string[]
-      rules: string[]
-      recommendations?: string[]
-    }
+      firewallDetected: boolean;
+      filtered: string[];
+      rules: string[];
+    };
     vulnerabilities?: {
-      critical: number
-      high: number
-      medium: number
-      low: number
+      critical: number;
+      high: number;
+      medium: number;
+      low: number;
       findings: Array<{
-        severity: string
-        title: string
-        description: string
-        solution?: string
-      }>
-    }
-  }>({})
+        severity: string;
+        title: string;
+        description: string;
+        solution?: string;
+      }>;
+    };
+  }>({});
 
   const runNetworkAnalysis = async () => {
     setIsLoading(true)
@@ -88,10 +87,10 @@ export function NetworkAnalyzer() {
 
       setScanProgress(100)
       setScanResults({
-        ports: ports?.data?.ports,
-        ssl: ssl?.data?.ssl,
-        firewall: firewall?.data?.firewall,
-        vulnerabilities: vulnScan?.data?.vulnerabilities
+        ports: ports.data.ports,
+        ssl: ssl?.data.ssl,
+        firewall: firewall.data.firewall,
+        vulnerabilities: vulnScan.data.vulnerabilities as any // Type assertion needed due to transformation
       })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Network analysis failed')

@@ -152,7 +152,7 @@ export const apiClient = {
         }
     },
 
-    scanPorts: async (host: string) => {
+    scanPorts: async (host: string): Promise<SecurityScanResults> => {
         try {
             const response = await fetch(`/api/network/ports?host=${encodeURIComponent(host)}`, {
                 method: 'GET',
@@ -160,8 +160,12 @@ export const apiClient = {
             if (!response.ok) throw new Error('Port scan failed');
             const data = await response.json();
             return {
-                openPorts: data.openPorts || [],
-                services: data.services || []
+                data: {
+                    ports: {
+                        openPorts: data.openPorts || [],
+                        services: data.services || []
+                    }
+                }
             };
         } catch (error) {
             console.error('Port scan error:', error);
@@ -169,16 +173,33 @@ export const apiClient = {
         }
     },
 
-    scanServices: async (host: string): Promise<SecurityScanResults> => {
+    checkSSL: async (host: string): Promise<SecurityScanResults> => {
         try {
-            const response = await fetch(`/api/network/services?host=${encodeURIComponent(host)}`, {
+            const response = await fetch(`/api/security/ssl?host=${encodeURIComponent(host)}`, {
                 method: 'GET',
             });
-            if (!response.ok) throw new Error('Service scan failed');
-            return await response.json();
+            if (!response.ok) throw new Error('SSL check failed');
+            const data = await response.json();
+            return {
+                data: {
+                    ssl: {
+                        grade: data.grade || 'F',
+                        protocol: data.protocol || 'Unknown',
+                        issues: data.issues || [],
+                        certDetails: {
+                            subject: data.subject || '',
+                            issuer: data.issuer || '',
+                            validFrom: data.validFrom || '',
+                            validTo: data.validTo || '',
+                            keySize: data.keySize || '',
+                            signatureAlgorithm: data.signatureAlgorithm || ''
+                        }
+                    }
+                }
+            };
         } catch (error) {
-            console.error('Service scan error:', error);
-            throw new Error('Service scan failed');
+            console.error('SSL check error:', error);
+            throw new Error('SSL check failed');
         }
     },
 
@@ -189,9 +210,31 @@ export const apiClient = {
             });
             if (!response.ok) throw new Error('Vulnerability scan failed');
             const data = await response.json();
+            
+            // Transform vulnerability data to match expected format
+            const findings = (data.vulnerabilities || []).map(vuln => ({
+                severity: vuln.severity,
+                title: vuln.name,
+                description: vuln.description,
+                solution: vuln.recommendation
+            }));
+
+            // Count vulnerabilities by severity
+            const severityCounts = findings.reduce((acc, finding) => {
+                const severity = finding.severity.toLowerCase();
+                if (severity === 'critical') acc.critical++;
+                else if (severity === 'high') acc.high++;
+                else if (severity === 'medium') acc.medium++;
+                else if (severity === 'low') acc.low++;
+                return acc;
+            }, { critical: 0, high: 0, medium: 0, low: 0 });
+
             return {
                 data: {
-                    vulnerabilities: data.vulnerabilities || [],
+                    vulnerabilities: {
+                        ...severityCounts,
+                        findings
+                    }
                 }
             };
         } catch (error) {
