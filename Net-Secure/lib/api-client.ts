@@ -1,4 +1,4 @@
-import { type JSZipFileOptions } from 'jszip';
+import { retryOperation } from "./utils";
 
 export interface FileWithMetadata extends File {
     id: string;
@@ -74,61 +74,103 @@ export const apiClient = {
             compressedBlob: new Blob()
         };
     },
-    startSpeedTest: async () => {
-        try {
-            // Test download speed using a large file download
-            const downloadStart = Date.now();
-            const downloadResponse = await fetch('https://speed.cloudflare.com/1MB', {
-                method: 'GET',
-            });
-            const downloadData = await downloadResponse.blob();
-            const downloadTime = (Date.now() - downloadStart) / 1000; // Convert to seconds
-            const downloadSpeed = (downloadData.size * 8) / (downloadTime * 1000000); // Convert to Mbps
+    startSpeedTest: async (onProgress?: (progress: number) => void) => {
+        return retryOperation(async () => {
+            // Test download speed using multiple samples
+            let totalDownloadSpeed = 0;
+            const downloadSamples = 3;
+            
+            for (let i = 0; i < downloadSamples; i++) {
+                const downloadStart = Date.now();
+                const downloadResponse = await fetch('https://speed.cloudflare.com/1MB', {
+                    method: 'GET',
+                });
+                const downloadData = await downloadResponse.blob();
+                const downloadTime = (Date.now() - downloadStart) / 1000;
+                const downloadSpeed = (downloadData.size * 8) / (downloadTime * 1000000);
+                totalDownloadSpeed += downloadSpeed;
+                
+                if (onProgress) {
+                    onProgress((i + 1) / (downloadSamples * 2) * 100);
+                }
+            }
 
-            // Test upload speed using a generated file
-            const uploadData = new Blob([new ArrayBuffer(1024 * 1024)]); // 1MB test file
-            const uploadStart = Date.now();
-            await fetch('https://speed.cloudflare.com/post', {
-                method: 'POST',
-                body: uploadData
-            });
-            const uploadTime = (Date.now() - uploadStart) / 1000;
-            const uploadSpeed = (uploadData.size * 8) / (uploadTime * 1000000);
+            // Test upload speed using multiple samples
+            let totalUploadSpeed = 0;
+            const uploadSamples = 3;
+            const uploadData = new Blob([new ArrayBuffer(1024 * 1024)]);
+
+            for (let i = 0; i < uploadSamples; i++) {
+                const uploadStart = Date.now();
+                await fetch('https://speed.cloudflare.com/post', {
+                    method: 'POST',
+                    body: uploadData
+                });
+                const uploadTime = (Date.now() - uploadStart) / 1000;
+                const uploadSpeed = (uploadData.size * 8) / (uploadTime * 1000000);
+                totalUploadSpeed += uploadSpeed;
+
+                if (onProgress) {
+                    onProgress(50 + (i + 1) / (uploadSamples * 2) * 100);
+                }
+            }
 
             return {
-                download: Math.round(downloadSpeed * 100) / 100,
-                upload: Math.round(uploadSpeed * 100) / 100,
+                download: Math.round((totalDownloadSpeed / downloadSamples) * 100) / 100,
+                upload: Math.round((totalUploadSpeed / uploadSamples) * 100) / 100,
                 timestamp: new Date().toISOString()
             };
-        } catch (error) {
-            console.error('Speed test error:', error);
-            throw new Error('Speed test failed');
-        }
+        });
+    },
+
+    getConnectionInfo: async () => {
+        return retryOperation(async () => {
+            const response = await fetch('https://ipapi.co/json/');
+            if (!response.ok) throw new Error('Connection info lookup failed');
+            const data = await response.json();
+            
+            return {
+                isp: data.org || 'Unknown ISP',
+                location: `${data.city || ''}, ${data.country_name || 'Unknown'}`.trim(),
+                asn: data.asn,
+                connectionType: data.connection_type || 'Unknown'
+            };
+        });
     },
 
     getIpAddress: async () => {
-        try {
+        return retryOperation(async () => {
             const response = await fetch('https://api.ipify.org?format=json');
+            if (!response.ok) throw new Error('IP address lookup failed');
             return await response.json();
-        } catch (error) {
-            console.error('IP address lookup error:', error);
-            throw new Error('Failed to get IP address');
-        }
+        });
     },
 
     ping: async () => {
-        try {
+        return retryOperation(async () => {
             const start = Date.now();
-            await fetch('https://www.cloudflare.com/cdn-cgi/trace');
+            const response = await fetch('https://www.cloudflare.com/cdn-cgi/trace');
+            if (!response.ok) throw new Error('Ping test failed');
             const pingTime = Date.now() - start;
+
+            // Calculate jitter by doing multiple pings
+            const samples = [];
+            for (let i = 0; i < 3; i++) {
+                const sampleStart = Date.now();
+                await fetch('https://www.cloudflare.com/cdn-cgi/trace');
+                samples.push(Date.now() - sampleStart);
+            }
+
+            // Calculate jitter as the average deviation between consecutive samples
+            const jitter = samples.slice(1).reduce((sum, time, i) => 
+                sum + Math.abs(time - samples[i]), 0) / (samples.length - 1);
+
             return {
                 startTime: start,
-                pingTime
+                pingTime,
+                jitter: Math.round(jitter)
             };
-        } catch (error) {
-            console.error('Ping error:', error);
-            throw new Error('Ping test failed');
-        }
+        });
     },
 
     uploadFile: async (file: File) => {
@@ -260,6 +302,39 @@ export const apiClient = {
         } catch (error) {
             console.error('Firewall check error:', error);
             throw new Error('Firewall check failed');
+        }
+    },
+
+    getGeolocation: async (ip: string) => {
+        return retryOperation(async () => {
+            const response = await fetch(`https://ipapi.co/${ip}/json/`);
+            if (!response.ok) throw new Error('Geolocation lookup failed');
+            const data = await response.json();
+            
+            return {
+                country: data.country_name,
+                city: data.city,
+                isp: data.org,
+                organization: data.org
+            };
+        });
+    },
+
+    getDnsInfo: async (ip: string) => {
+        try {
+            const response = await fetch(`/api/network/dns?ip=${encodeURIComponent(ip)}`, {
+                method: 'GET',
+            });
+            if (!response.ok) throw new Error('DNS lookup failed');
+            const data = await response.json();
+            
+            return {
+                records: data.records || [],
+                reverseDns: data.reverseDns
+            };
+        } catch (error) {
+            console.error('DNS lookup error:', error);
+            throw new Error('Failed to get DNS information');
         }
     }
 };
