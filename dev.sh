@@ -20,7 +20,8 @@ check_and_kill_port 3001  # Backend port
 # Start frontend development server first
 print_status "Starting frontend development server..."
 cd Net-Secure
-npm install
+npm install --legacy-peer-deps
+npm audit fix --force
 npm run dev &
 FRONTEND_PID=$!
 

@@ -188,17 +188,7 @@ export function AppSidebar({ activeTab, setActiveTab, username, onLogout }: AppS
         </ScrollArea>
 
         {/* Footer */}
-        <div className="border-t p-4">
-          <Button
-            variant="ghost"
-            className="w-full justify-start text-sm font-medium text-muted-foreground hover:text-foreground group"
-            onClick={onLogout}
-          >
-            <LogOut className="mr-2 h-4 w-4 transition-transform group-hover:-translate-x-0.5" />
-            Logout
-            <ChevronRight className="ml-auto h-4 w-4 opacity-0 transition-opacity group-hover:opacity-100" />
-          </Button>
-        </div>
+        {/* Logout button removed */}
       </div>
     </div>
   )

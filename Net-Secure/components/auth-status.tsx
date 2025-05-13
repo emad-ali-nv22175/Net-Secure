@@ -84,50 +84,6 @@ export function useAuth() {
 }
 
 export function AuthStatus() {
-  const { isAuthenticated, user, logout } = useAuth()
-
-  if (!isAuthenticated) {
-    return (
-      <div className="flex items-center gap-2">
-        <Button variant="outline" size="sm" asChild>
-          <Link href="/auth/login">Login</Link>
-        </Button>
-        <Button size="sm" asChild>
-          <Link href="/auth/signup">Sign up</Link>
-        </Button>
-      </div>
-    )
-  }
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="rounded-full">
-          <Avatar className="h-8 w-8">
-            <AvatarFallback className="bg-primary/10 text-primary">
-              {user?.name.charAt(0).toUpperCase() || "U"}
-            </AvatarFallback>
-          </Avatar>
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuLabel className="flex flex-col">
-          <span>{user?.name}</span>
-          <span className="text-xs font-normal text-muted-foreground">{user?.email}</span>
-        </DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem asChild>
-          <Link href="/profile" className="cursor-pointer">
-            <User className="mr-2 h-4 w-4" />
-            Profile
-          </Link>
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={logout} className="cursor-pointer text-destructive focus:text-destructive">
-          <LogOut className="mr-2 h-4 w-4" />
-          Logout
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  )
+  return null;
 }
 
